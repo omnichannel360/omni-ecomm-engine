@@ -2,12 +2,14 @@ import { supa } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
+type Setting = { key: string; value: unknown };
+
 export default async function SettingsPage() {
-  let rows: Array<{ key: string; value: unknown }> = [];
+  let rows: Setting[] = [];
   try {
     const db = supa();
     const { data } = await db.from("settings").select("key, value").order("key");
-    if (data) rows = data as typeof rows;
+    if (data) rows = data as Setting[];
   } catch {}
   return (
     <>

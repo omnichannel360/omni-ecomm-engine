@@ -2,20 +2,23 @@ import { supa } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
+type SkuRow = { id: string; client_id: string; status: string; current_stage: string; updated_at: string };
+
 export default async function DashboardPage() {
-  let counts = { total: 0, finalized: 0, pending: 0, failed: 0 };
-  let recent: Array<{ id: string; client_id: string; status: string; current_stage: string; updated_at: string }> = [];
+  const counts = { total: 0, finalized: 0, pending: 0, failed: 0 };
+  let recent: SkuRow[] = [];
   try {
     const db = supa();
     const { data: c } = await db.from("skus").select("status");
     if (c) {
-      counts.total = c.length;
-      counts.finalized = c.filter((x: { status: string }) => x.status === "FINALIZED").length;
-      counts.pending = c.filter((x: { status: string }) => !["FINALIZED", "FAILED", "REJECTED"].includes(x.status)).length;
-      counts.failed = c.filter((x: { status: string }) => x.status === "FAILED").length;
+      const arr = c as Array<{ status: string }>;
+      counts.total = arr.length;
+      counts.finalized = arr.filter((x) => x.status === "FINALIZED").length;
+      counts.pending = arr.filter((x) => !["FINALIZED", "FAILED", "REJECTED"].includes(x.status)).length;
+      counts.failed = arr.filter((x) => x.status === "FAILED").length;
     }
     const { data: r } = await db.from("skus").select("id, client_id, status, current_stage, updated_at").order("updated_at", { ascending: false }).limit(15);
-    if (r) recent = r as typeof recent;
+    if (r) recent = r as SkuRow[];
   } catch {}
 
   return (

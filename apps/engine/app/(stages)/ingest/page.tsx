@@ -3,12 +3,14 @@ import { createSku } from "./actions";
 
 export const dynamic = "force-dynamic";
 
+type Row = { id: string; client_id: string; source_url: string; status: string; created_at: string };
+
 export default async function IngestPage() {
-  let recent: Array<{ id: string; client_id: string; source_url: string; status: string; created_at: string }> = [];
+  let recent: Row[] = [];
   try {
     const db = supa();
     const { data } = await db.from("skus").select("id, client_id, source_url, status, created_at").order("created_at", { ascending: false }).limit(10);
-    if (data) recent = data as typeof recent;
+    if (data) recent = data as Row[];
   } catch {}
 
   return (

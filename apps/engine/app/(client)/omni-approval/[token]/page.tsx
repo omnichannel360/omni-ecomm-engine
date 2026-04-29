@@ -3,17 +3,20 @@ import { decide } from "./actions";
 
 export const dynamic = "force-dynamic";
 
+type Approval = { id: string; sku_id: string; decision: string | null; expires_at: string };
+type Sku = { id: string; client_id: string; source_url: string; status: string };
+
 export default async function OmniApprovalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  let approval: { id: string; sku_id: string; decision: string | null; expires_at: string } | null = null;
-  let sku: { id: string; client_id: string; source_url: string; status: string } | null = null;
+  let approval: Approval | null = null;
+  let sku: Sku | null = null;
   try {
     const db = supa();
     const { data: a } = await db.from("approvals").select("id, sku_id, decision, expires_at").eq("token", token).maybeSingle();
     if (a) {
-      approval = a as typeof approval;
-      const { data: s } = await db.from("skus").select("id, client_id, source_url, status").eq("id", a.sku_id).maybeSingle();
-      if (s) sku = s as typeof sku;
+      approval = a as Approval;
+      const { data: s } = await db.from("skus").select("id, client_id, source_url, status").eq("id", (a as Approval).sku_id).maybeSingle();
+      if (s) sku = s as Sku;
     }
   } catch {}
 
