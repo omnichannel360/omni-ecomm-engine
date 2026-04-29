@@ -13,7 +13,7 @@
     "@supabase/supabase-js": "^2.48.1",
     "bullmq": "^5.34.5",
     "ioredis": "^5.4.2",
-    "playwright": "^1.49.1"
+    "playwright": "1.49.1"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
