@@ -31,21 +31,28 @@ const w = new Worker(
     await mkdir(dir, { recursive: true });
 
     const { data: out } = await supa.from("ai_outputs").select("image_prompts_jsonb, copy_jsonb").eq("sku_id", sku_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: scrape } = await supa.from("raw_assets").select("content_jsonb").eq("sku_id", sku_id).eq("type", "scrape").order("created_at", { ascending: false }).limit(1).maybeSingle();
+
     const prompts = Array.isArray(out?.image_prompts_jsonb) ? (out!.image_prompts_jsonb as Array<{ slot?: string; scene?: string; alt_text?: string }>) : [];
-    const copy = (out?.copy_jsonb as { headers?: string[]; body?: string } | null) ?? null;
+    const copy = (out?.copy_jsonb as { headers?: string[] } | null) ?? null;
+    const ctx = (scrape?.content_jsonb ?? {}) as { title?: string; product_image?: string };
+    const productImage = ctx.product_image || null;
+    const productTitle = ctx.title?.replace(/^Amazon\.com\s*:\s*/i, "").slice(0, 200) ?? "";
 
     for (const slot of SLOTS) {
       const p = prompts.find((x) => x.slot === slot);
       const headerHint = copy?.headers?.[0] ? ` Brand headline context: "${copy.headers[0]}".` : "";
+      const productHint = productTitle ? ` Product: "${productTitle}".` : "";
       const prompt = p?.scene
-        ? `${p.scene}.${headerHint} Square 2000x2000, photo-real, brand-safe, high contrast, e-commerce hero quality, clean background.`
-        : `Premium e-commerce product image for slot "${slot}", square 2000x2000.${headerHint}`;
+        ? `${p.scene}.${productHint}${headerHint} Square 2000x2000, photo-real, brand-safe, high contrast, e-commerce hero quality, clean background.`
+        : `Premium e-commerce product image for slot "${slot}".${productHint} Square 2000x2000.`;
       let model = "gemini-2.5-flash-image";
       let file_path: string | null = null;
       let fallback_reason: string | null = null;
 
       try {
-        const out = await bananaGenerate(prompt);
+        const refForSlot = (slot === "feature_infographic" || slot === "trust_slide") ? null : productImage;
+        const out = await bananaGenerate(prompt, refForSlot);
         if (out?.data) {
           const buf = Buffer.from(out.data, "base64");
           const fname = `${slot}.png`;

@@ -16,6 +16,10 @@ async function transition(sku_id: string, to_state: string, current_stage: strin
   await supa.from("sku_events").insert({ sku_id, from_state: prev?.status ?? null, to_state, actor: "scrape-worker", metadata });
 }
 
+async function safeAttr(loc: import("playwright").Locator, name: string): Promise<string | null> {
+  try { return await loc.first().getAttribute(name, { timeout: 1500 }); } catch { return null; }
+}
+
 const w = new Worker(
   "scrape",
   async (job) => {
@@ -28,31 +32,51 @@ const w = new Worker(
       const ctx = await browser.newContext({ userAgent: "OmniBot/1.0 (+https://omnichannelsol.com/bot)" });
       const page = await ctx.newPage();
       await page.goto(source_url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      try { await page.waitForLoadState("networkidle", { timeout: 8_000 }); } catch {}
 
       const title = await page.title();
       const html = await page.content();
 
-      const description = await page.locator('meta[name="description"]').first().getAttribute("content").catch(() => null);
-      const og_title = await page.locator('meta[property="og:title"]').first().getAttribute("content").catch(() => null);
-      const og_description = await page.locator('meta[property="og:description"]').first().getAttribute("content").catch(() => null);
-      const og_image = await page.locator('meta[property="og:image"]').first().getAttribute("content").catch(() => null);
+      const description = await safeAttr(page.locator('meta[name="description"]'), "content");
+      const og_title = await safeAttr(page.locator('meta[property="og:title"]'), "content");
+      const og_description = await safeAttr(page.locator('meta[property="og:description"]'), "content");
+      const og_image = await safeAttr(page.locator('meta[property="og:image"]'), "content");
 
-      const imgEls = await page.locator("img").elementHandles();
-      const images: string[] = [];
-      for (const h of imgEls.slice(0, 12)) {
-        const src = await h.getAttribute("src").catch(() => null);
-        if (src) images.push(src);
+      // Site-aware product image extraction
+      const productImageCandidates: Array<string | null> = [
+        await safeAttr(page.locator("#landingImage"), "data-old-hires"),
+        await safeAttr(page.locator("#landingImage"), "src"),
+        await safeAttr(page.locator('img[data-a-image-name="landingImage"]'), "src"),
+        await safeAttr(page.locator('[data-a-image-source-density] img'), "src"),
+        await safeAttr(page.locator('img[data-zoom-hires]'), "data-zoom-hires"),
+        await safeAttr(page.locator('img[itemprop="image"]'), "src"),
+        await safeAttr(page.locator('meta[property="product:image"]'), "content"),
+        og_image
+      ];
+      let product_image: string | null = null;
+      for (const c of productImageCandidates) {
+        if (c && /^https?:\/\//.test(c) && !/share-icons|amazon\.com\/.*amazon\.png|sprite|placeholder/i.test(c)) { product_image = c; break; }
       }
+
+      // Top-N largest images on page (heuristic: width attr or naturalWidth)
+      const imgEls = await page.locator("img").elementHandles();
+      const allImages: Array<{ src: string; w: number }> = [];
+      for (const h of imgEls.slice(0, 30)) {
+        const src = await h.getAttribute("src").catch(() => null);
+        const w = await h.evaluate((el) => (el as HTMLImageElement).naturalWidth || Number((el as HTMLElement).getAttribute("width")) || 0).catch(() => 0);
+        if (src && /^https?:\/\//.test(src)) allImages.push({ src, w: Number(w) || 0 });
+      }
+      const images = allImages.sort((a, b) => b.w - a.w).slice(0, 12).map((x) => x.src);
+      if (!product_image && images.length > 0) product_image = images[0]!;
 
       await ctx.close();
 
       const meta = { description, og_title, og_description, og_image };
       await supa.from("raw_assets").insert({
-        sku_id,
-        type: "scrape",
-        content_jsonb: { title, meta, images, html_length: html.length, scraped_at: new Date().toISOString() }
+        sku_id, type: "scrape",
+        content_jsonb: { title, meta, product_image, images, html_length: html.length, scraped_at: new Date().toISOString() }
       });
-      await transition(sku_id, "PROCESSING", "process", { title });
+      await transition(sku_id, "PROCESSING", "process", { title, has_product_image: !!product_image });
       await processQueue.add("process", { sku_id });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

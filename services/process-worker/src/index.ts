@@ -25,21 +25,30 @@ const w = new Worker(
     console.log(`[process] ${sku_id}`);
 
     const { data: assets } = await supa.from("raw_assets").select("content_jsonb").eq("sku_id", sku_id).eq("type", "scrape").order("created_at", { ascending: false }).limit(1).maybeSingle();
-    const ctx = assets?.content_jsonb ?? {};
+    const ctx = (assets?.content_jsonb ?? {}) as { title?: string; meta?: { description?: string }; product_image?: string };
+
+    const userMessage = `Scraped product page context:\n` +
+      `TITLE: ${ctx.title ?? "(none)"}\n` +
+      `META DESCRIPTION: ${ctx.meta?.description ?? "(none)"}\n` +
+      `PRODUCT IMAGE URL: ${ctx.product_image ?? "(none)"}\n` +
+      `\nReturn the structured A+ JSON now. Anchor every image_prompt scene to the exact product described in the title.`;
 
     const model = process.env.CLAUDE_DEFAULT_MODEL || "claude-sonnet-4-6";
     const res = await anthropic.messages.create({
       model,
       max_tokens: 2048,
       system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: `Scraped context:\n${JSON.stringify(ctx).slice(0, 8000)}\n\nReturn the structured JSON now.` }]
+      messages: [{ role: "user", content: userMessage }]
     });
     const text = res.content.map((c) => (c.type === "text" ? c.text : "")).join("").trim();
     let copy: unknown = null;
-    try { copy = JSON.parse(text); } catch { copy = { raw: text }; }
+    try { copy = JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")); } catch { copy = { raw: text }; }
 
     const imagePrompts = (copy as { image_prompts?: unknown })?.image_prompts ?? [];
-    await supa.from("ai_outputs").insert({ sku_id, copy_jsonb: copy, image_prompts_jsonb: imagePrompts, model_used: model, tokens_in: res.usage?.input_tokens ?? null, tokens_out: res.usage?.output_tokens ?? null });
+    await supa.from("ai_outputs").insert({
+      sku_id, copy_jsonb: copy, image_prompts_jsonb: imagePrompts,
+      model_used: model, tokens_in: res.usage?.input_tokens ?? null, tokens_out: res.usage?.output_tokens ?? null
+    });
     await transition(sku_id, "GENERATING", "generate", { model });
     await generateQueue.add("generate", { sku_id });
   },
