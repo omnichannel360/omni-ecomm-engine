@@ -1,0 +1,24 @@
+# Append to Caddyfile inside running `caddy` container at /etc/caddy/Caddyfile
+# Caddy auto-issues TLS for *.sslip.io via Let's Encrypt.
+
+engine.5-78-187-35.sslip.io {
+    reverse_proxy host.docker.internal:8005
+
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    request_body { max_size 50MB }
+
+    log {
+        output file /data/engine-access.log {
+            roll_size 10mb
+            roll_keep 3
+        }
+    }
+}
+
+# Future: when DNS for engine.omnichannelsol.com points to 5.78.187.35,
+# add a second site block with the same reverse_proxy target.
