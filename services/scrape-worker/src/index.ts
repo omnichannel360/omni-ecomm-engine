@@ -28,21 +28,30 @@ const w = new Worker(
       const ctx = await browser.newContext({ userAgent: "OmniBot/1.0 (+https://omnichannelsol.com/bot)" });
       const page = await ctx.newPage();
       await page.goto(source_url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+
       const title = await page.title();
       const html = await page.content();
-      const meta = await page.evaluate(() => {
-        const get = (s: string) => document.querySelector<HTMLMetaElement>(s)?.content ?? null;
-        return {
-          description: get('meta[name="description"]'),
-          og_title: get('meta[property="og:title"]'),
-          og_description: get('meta[property="og:description"]'),
-          og_image: get('meta[property="og:image"]')
-        };
-      });
-      const images = await page.$$eval("img", (els) => els.slice(0, 12).map((e) => (e as HTMLImageElement).src).filter(Boolean));
+
+      const description = await page.locator('meta[name="description"]').first().getAttribute("content").catch(() => null);
+      const og_title = await page.locator('meta[property="og:title"]').first().getAttribute("content").catch(() => null);
+      const og_description = await page.locator('meta[property="og:description"]').first().getAttribute("content").catch(() => null);
+      const og_image = await page.locator('meta[property="og:image"]').first().getAttribute("content").catch(() => null);
+
+      const imgEls = await page.locator("img").elementHandles();
+      const images: string[] = [];
+      for (const h of imgEls.slice(0, 12)) {
+        const src = await h.getAttribute("src").catch(() => null);
+        if (src) images.push(src);
+      }
+
       await ctx.close();
 
-      await supa.from("raw_assets").insert({ sku_id, type: "scrape", content_jsonb: { title, meta, images, html_length: html.length, scraped_at: new Date().toISOString() } });
+      const meta = { description, og_title, og_description, og_image };
+      await supa.from("raw_assets").insert({
+        sku_id,
+        type: "scrape",
+        content_jsonb: { title, meta, images, html_length: html.length, scraped_at: new Date().toISOString() }
+      });
       await transition(sku_id, "PROCESSING", "process", { title });
       await processQueue.add("process", { sku_id });
     } catch (e) {
