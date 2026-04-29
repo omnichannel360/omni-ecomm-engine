@@ -1,6 +1,8 @@
 import { Worker, Queue } from "bullmq";
 import IORedis from "ioredis";
 import { createClient } from "@supabase/supabase-js";
+import { writeFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { bananaGenerate } from "./banana.js";
 
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
@@ -11,6 +13,7 @@ const supa = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVIC
 const auditQueue = new Queue("audit", { connection: conn });
 
 const SLOTS = ["hero", "lifestyle_1", "lifestyle_2", "lifestyle_3", "feature_infographic", "trust_slide"] as const;
+const IMAGES_DIR = process.env.IMAGES_DIR || "/data/images";
 
 async function transition(sku_id: string, to_state: string, current_stage: string, metadata: Record<string, unknown> = {}) {
   const { data: prev } = await supa.from("skus").select("status").eq("id", sku_id).single();
@@ -24,27 +27,40 @@ const w = new Worker(
     const { sku_id } = job.data as { sku_id: string };
     console.log(`[generate] ${sku_id}`);
 
-    const { data: out } = await supa.from("ai_outputs").select("image_prompts_jsonb").eq("sku_id", sku_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const dir = join(IMAGES_DIR, sku_id);
+    await mkdir(dir, { recursive: true });
+
+    const { data: out } = await supa.from("ai_outputs").select("image_prompts_jsonb, copy_jsonb").eq("sku_id", sku_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
     const prompts = Array.isArray(out?.image_prompts_jsonb) ? (out!.image_prompts_jsonb as Array<{ slot?: string; scene?: string; alt_text?: string }>) : [];
+    const copy = (out?.copy_jsonb as { headers?: string[]; body?: string } | null) ?? null;
 
     for (const slot of SLOTS) {
       const p = prompts.find((x) => x.slot === slot);
-      const prompt = p?.scene ? `${p.scene}. Square 2000x2000, photo-real, brand-safe, high contrast.` : `Product hero shot for slot ${slot}, square 2000x2000.`;
-      let bucketPath: string | null = null;
+      const headerHint = copy?.headers?.[0] ? ` Brand headline context: "${copy.headers[0]}".` : "";
+      const prompt = p?.scene
+        ? `${p.scene}.${headerHint} Square 2000x2000, photo-real, brand-safe, high contrast, e-commerce hero quality, clean background.`
+        : `Premium e-commerce product image for slot "${slot}", square 2000x2000.${headerHint}`;
       let model = "gemini-2.5-flash-image";
+      let file_path: string | null = null;
       let fallback_reason: string | null = null;
+
       try {
         const out = await bananaGenerate(prompt);
-        if (out) {
-          bucketPath = `data:${out.mime};base64,${out.data.slice(0, 64)}…`;
+        if (out?.data) {
+          const buf = Buffer.from(out.data, "base64");
+          const fname = `${slot}.png`;
+          await writeFile(join(dir, fname), buf);
+          file_path = `${sku_id}/${fname}`;
         } else {
           fallback_reason = "no_image_returned";
+          model = "stub";
         }
       } catch (e) {
         fallback_reason = e instanceof Error ? e.message : String(e);
         model = "stub";
       }
-      await supa.from("generated_images").insert({ sku_id, slot, model, prompt, file_path: bucketPath, width: 2000, height: 2000, fallback_reason });
+
+      await supa.from("generated_images").insert({ sku_id, slot, model, prompt, file_path, width: 2000, height: 2000, fallback_reason });
     }
 
     await transition(sku_id, "AUDITING", "audit");

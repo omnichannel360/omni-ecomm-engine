@@ -1,5 +1,6 @@
 # Omni Ecomm Engine — production compose
 # Self-contained Redis. Supabase reached via public sslip.io URL.
+# Shared volumes: ./data/images (generate→audit→export→web), ./data/exports (export→web)
 name: omni-ecomm-engine
 
 x-env: &shared_env
@@ -28,8 +29,13 @@ services:
       PORT: 8005
       APP_URL: ${APP_URL:-https://engine.5-78-187-35.sslip.io}
       JWT_SECRET: ${JWT_SECRET}
+      IMAGES_DIR: /data/images
+      EXPORT_DIR: /data/exports
     ports:
       - "127.0.0.1:8005:8005"
+    volumes:
+      - ./data/images:/data/images:ro
+      - ./data/exports:/data/exports:ro
 
   scrape-worker:
     build: { context: ., dockerfile: services/scrape-worker/Dockerfile }
@@ -62,6 +68,9 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_IMAGE_MODEL: ${GEMINI_IMAGE_MODEL:-gemini-2.5-flash-image}
       GENERATE_CONCURRENCY: 2
+      IMAGES_DIR: /data/images
+    volumes:
+      - ./data/images:/data/images
 
   audit-worker:
     build: { context: ., dockerfile: services/audit-worker/Dockerfile }
@@ -72,7 +81,10 @@ services:
       <<: *shared_env
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       AUDIT_VISION_MODEL: ${AUDIT_VISION_MODEL:-claude-opus-4-7}
-      AUDIT_CONCURRENCY: 4
+      AUDIT_CONCURRENCY: 2
+      IMAGES_DIR: /data/images
+    volumes:
+      - ./data/images:/data/images:ro
 
   notify-worker:
     build: { context: ., dockerfile: services/notify-worker/Dockerfile }
@@ -95,6 +107,8 @@ services:
     environment:
       <<: *shared_env
       EXPORT_DIR: /data/exports
+      IMAGES_DIR: /data/images
       EXPORT_CONCURRENCY: 2
     volumes:
       - ./data/exports:/data/exports
+      - ./data/images:/data/images:ro

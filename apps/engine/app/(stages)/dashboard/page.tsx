@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { supa } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export default async function DashboardPage() {
   return (
     <>
       <h2 className="h">Dashboard</h2>
-      <p className="sub">KPIs across all stages — live from <code>ecomm_engine</code> schema.</p>
+      <p className="sub">Live KPIs from <code>ecomm_engine</code>. Submit new SKUs in <Link href="/ingest">Ingest</Link>.</p>
       <div className="row">
         <div className="kpi"><div className="l">SKUs total</div><div className="v">{counts.total}</div></div>
         <div className="kpi"><div className="l">In flight</div><div className="v">{counts.pending}</div></div>
@@ -33,22 +34,19 @@ export default async function DashboardPage() {
       </div>
       <div className="card">
         <h3 style={{ margin: "0 0 12px" }}>Recent SKUs</h3>
-        {recent.length === 0 ? (
-          <p style={{ color: "var(--muted)" }}>No SKUs yet. Submit one in <a href="/ingest">Ingest</a>.</p>
-        ) : (
+        {recent.length === 0 ? (<p style={{ color: "var(--muted)" }}>No SKUs yet.</p>) : (
           <table>
-            <thead><tr><th>ID</th><th>Client</th><th>Stage</th><th>Status</th><th>Updated</th></tr></thead>
-            <tbody>
-              {recent.map((s) => (
-                <tr key={s.id}>
-                  <td><code>{s.id.slice(0, 8)}</code></td>
-                  <td>{s.client_id}</td>
-                  <td><span className="tag">{s.current_stage}</span></td>
-                  <td><span className={`tag ${s.status === "FINALIZED" ? "good" : s.status === "FAILED" ? "bad" : "warn"}`}>{s.status}</span></td>
-                  <td style={{ color: "var(--muted)" }}>{new Date(s.updated_at).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
+            <thead><tr><th>ID</th><th>Client</th><th>Stage</th><th>Status</th><th>Updated</th><th></th></tr></thead>
+            <tbody>{recent.map((s) => (
+              <tr key={s.id}>
+                <td><code>{s.id.slice(0, 8)}</code></td>
+                <td>{s.client_id}</td>
+                <td><span className="tag">{s.current_stage}</span></td>
+                <td><span className={`tag ${s.status === "FINALIZED" ? "good" : s.status === "FAILED" ? "bad" : "warn"}`}>{s.status}</span></td>
+                <td style={{ color: "var(--muted)" }}>{new Date(s.updated_at).toLocaleString()}</td>
+                <td><Link className="btn secondary" href={`/review/${s.id}`}>Open</Link></td>
+              </tr>
+            ))}</tbody>
           </table>
         )}
       </div>
