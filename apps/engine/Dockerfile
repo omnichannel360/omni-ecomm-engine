@@ -20,6 +20,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=8005
 ENV HOSTNAME=0.0.0.0
 COPY --from=build /app/apps/engine/.next/standalone /app/
-COPY --from=build /app/apps/engine/.next/static /app/apps/engine/.next/static
+COPY --from=build /app/apps/engine/.next/static /app/.next/static
 EXPOSE 8005
-CMD ["node", "apps/engine/server.js"]
+CMD ["node", "server.js"]

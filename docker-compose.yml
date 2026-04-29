@@ -1,21 +1,28 @@
 # Omni Ecomm Engine — production compose
-# Host network access via host.docker.internal for shared Supabase + Redis on Hetzner.
+# Self-contained Redis. Supabase reached via public sslip.io URL.
 name: omni-ecomm-engine
 
 x-env: &shared_env
   NODE_ENV: production
-  REDIS_URL: ${REDIS_URL:-redis://host.docker.internal:6379}
+  REDIS_URL: redis://redis:6379
   SUPABASE_URL: ${SUPABASE_URL}
   SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
   DATABASE_URL: ${DATABASE_URL}
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: omni-ecomm-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./data/redis:/data
+
   engine-web:
-    build:
-      context: .
-      dockerfile: apps/engine/Dockerfile
+    build: { context: ., dockerfile: apps/engine/Dockerfile }
     container_name: omni-ecomm-web
     restart: unless-stopped
+    depends_on: [redis]
     environment:
       <<: *shared_env
       PORT: 8005
@@ -23,60 +30,55 @@ services:
       JWT_SECRET: ${JWT_SECRET}
     ports:
       - "127.0.0.1:8005:8005"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   scrape-worker:
     build: { context: ., dockerfile: services/scrape-worker/Dockerfile }
     container_name: omni-ecomm-scrape
     restart: unless-stopped
+    depends_on: [redis]
     environment:
       <<: *shared_env
       SCRAPE_CONCURRENCY: 4
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   process-worker:
     build: { context: ., dockerfile: services/process-worker/Dockerfile }
     container_name: omni-ecomm-process
     restart: unless-stopped
+    depends_on: [redis]
     environment:
       <<: *shared_env
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       CLAUDE_DEFAULT_MODEL: ${CLAUDE_DEFAULT_MODEL:-claude-sonnet-4-6}
       CLAUDE_COMPLEX_MODEL: ${CLAUDE_COMPLEX_MODEL:-claude-opus-4-7}
       PROCESS_CONCURRENCY: 6
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   generate-worker:
     build: { context: ., dockerfile: services/generate-worker/Dockerfile }
     container_name: omni-ecomm-generate
     restart: unless-stopped
+    depends_on: [redis]
     environment:
       <<: *shared_env
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_IMAGE_MODEL: ${GEMINI_IMAGE_MODEL:-gemini-2.5-flash-image}
       GENERATE_CONCURRENCY: 2
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   audit-worker:
     build: { context: ., dockerfile: services/audit-worker/Dockerfile }
     container_name: omni-ecomm-audit
     restart: unless-stopped
+    depends_on: [redis]
     environment:
       <<: *shared_env
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       AUDIT_VISION_MODEL: ${AUDIT_VISION_MODEL:-claude-opus-4-7}
       AUDIT_CONCURRENCY: 4
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   notify-worker:
     build: { context: ., dockerfile: services/notify-worker/Dockerfile }
     container_name: omni-ecomm-notify
     restart: unless-stopped
+    depends_on: [redis]
     environment:
       <<: *shared_env
       RESEND_API_KEY: ${RESEND_API_KEY:-}
@@ -84,18 +86,15 @@ services:
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       SLACK_DEFAULT_CHANNEL: ${SLACK_DEFAULT_CHANNEL:-#omni-ecomm}
       NOTIFY_CONCURRENCY: 10
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   export-worker:
     build: { context: ., dockerfile: services/export-worker/Dockerfile }
     container_name: omni-ecomm-export
     restart: unless-stopped
+    depends_on: [redis]
     environment:
       <<: *shared_env
       EXPORT_DIR: /data/exports
       EXPORT_CONCURRENCY: 2
     volumes:
       - ./data/exports:/data/exports
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
