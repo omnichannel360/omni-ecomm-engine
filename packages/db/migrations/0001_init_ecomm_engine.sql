@@ -184,9 +184,25 @@ create trigger settings_touch before update on ecomm_engine.settings
 create trigger brand_settings_touch before update on ecomm_engine.brand_settings
   for each row execute function ecomm_engine.touch_updated_at();
 
+-- PostgREST exposure: schema + role grants for service_role / authenticated
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticator') then
+    grant usage on schema ecomm_engine to authenticator, anon, authenticated, service_role;
+    grant all on schema ecomm_engine to service_role;
+    grant select, insert, update, delete on all tables in schema ecomm_engine to service_role, authenticated;
+    grant usage, select on all sequences in schema ecomm_engine to service_role, authenticated;
+    alter default privileges for role postgres in schema ecomm_engine grant select, insert, update, delete on tables to service_role, authenticated;
+    alter default privileges for role postgres in schema ecomm_engine grant usage, select on sequences to service_role, authenticated;
+  end if;
+end $$;
+
 -- seed: minimal settings
 insert into ecomm_engine.settings (key, value) values
   ('schema_version', to_jsonb(1)),
   ('image_generator_primary', '"banana"'),
   ('image_generator_fallback_enabled', 'false')
 on conflict (key) do nothing;
+
+-- IMPORTANT (operator): add 'ecomm_engine' to PGRST_DB_SCHEMAS in /opt/supabase/.env
+-- then: cd /opt/supabase && docker compose up -d --no-deps --force-recreate rest
