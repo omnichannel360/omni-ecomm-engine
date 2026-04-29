@@ -21,6 +21,5 @@ ENV PORT=8005
 ENV HOSTNAME=0.0.0.0
 COPY --from=build /app/apps/engine/.next/standalone /app/
 COPY --from=build /app/apps/engine/.next/static /app/apps/engine/.next/static
-COPY --from=build /app/apps/engine/public /app/apps/engine/public
 EXPOSE 8005
 CMD ["node", "apps/engine/server.js"]
