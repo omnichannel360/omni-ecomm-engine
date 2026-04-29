@@ -10,6 +10,6 @@ export function supa(): SupabaseClient {
   cached = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
     db: { schema: "ecomm_engine" }
-  });
+  }) as unknown as SupabaseClient;
   return cached;
 }
