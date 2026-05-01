@@ -22,7 +22,11 @@ async function tryOnce(parts: Part[]): Promise<{ data: string; mime: string } | 
   return null;
 }
 
-export async function bananaGenerate(prompt: string, referenceImageUrl?: string | null): Promise<{ data: string; mime: string } | null> {
+export async function bananaGenerate(
+  prompt: string,
+  referenceImageUrl?: string | null,
+  negativePrompt?: string | null
+): Promise<{ data: string; mime: string } | null> {
   let refPart: Part | null = null;
   if (referenceImageUrl) {
     try {
@@ -37,16 +41,22 @@ export async function bananaGenerate(prompt: string, referenceImageUrl?: string 
     } catch {}
   }
 
+  const negativeSuffix = negativePrompt && negativePrompt.trim().length > 0
+    ? `\n\nAVOID / DO NOT INCLUDE: ${negativePrompt.trim()}.`
+    : "";
+
   const variants = [
-    prompt,
-    `${prompt}\nRender the actual product visually — do not return text.`,
-    `Generate a high-quality square photograph (2000x2000). Subject: ${prompt}`
+    prompt + negativeSuffix,
+    `${prompt}${negativeSuffix}\nRender the actual product visually — do not return text.`,
+    `Generate a high-quality square photograph (2000x2000). Subject: ${prompt}.${negativeSuffix}`
   ];
 
   for (let i = 0; i < variants.length; i++) {
     const parts: Part[] = [];
     if (refPart) parts.push(refPart);
-    parts.push({ text: refPart ? `Use the attached image as the EXACT product reference. Keep the same product, colours, pattern and shape. ${variants[i]}` : variants[i]! });
+    parts.push({ text: refPart
+      ? `Use the attached image as the EXACT product reference. Keep the same product, colours, pattern and shape. ${variants[i]}`
+      : variants[i]! });
     try {
       const out = await tryOnce(parts);
       if (out) return out;
